@@ -1617,3 +1617,13 @@ class AHUIEEImage(AHUIObject):
                 self.digest = asset["digest"]
                 self.tags = asset["tags"]
                 break
+
+
+class AHUICollectionRemote(AHUIObject):
+    def __init__(self, API_object, data=None):
+        """Initialize the object."""
+        super(AHUICollectionRemote, self).__init__(API_object, data)
+        self.endpoint = "remotes"
+        self.object_type = "collection remote"
+        self.name_field = "name"
+        self.id_field = "pk"

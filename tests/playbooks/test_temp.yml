@@ -1,0 +1,33 @@
+---
+- name: Test the user and group management modules
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  collections:
+    - infra.ah_configuration
+  vars:
+    galaxy_ng_version: master
+    redhat_catalog_username: rhn-gps-ssulliva
+    redhat_catalog_password: jEEH6aoJ7poBQr
+    ah_hostname: http://10.242.42.140:8002
+    ah_username: iqe_admin
+    ah_password: redhat
+    ah_path_prefix: 'automation-hub'
+    ah_validate_certs: false
+
+  pre_tasks:
+    - name: Include vars from ah_configs directory
+      ansible.builtin.include_vars:
+        dir: ./ah_configs
+        extensions: ["yml"]
+      tags:
+        - always
+  tasks:
+
+
+    - name: Repository sync
+      ansible.builtin.include_role:
+        name: collection_remote
+
+...
