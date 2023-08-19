@@ -68,7 +68,7 @@ The module accepts the following roles:
   `add_ansiblerepository`, `change_ansiblerepository`, `delete_ansiblerepository`, `manage_roles_ansiblerepository`,
   `repair_ansiblerepository`, `view_ansiblerepository`,
 - For container image management, only with private automation hub v4.3.2 or later,
-  `change_containernamespace_perms`, `change_container`, `change_image_tag`, `create_container`, 
+  `change_containernamespace_perms`, `change_container`, `change_image_tag`, `create_container`,
   Push existing container `push_container`, `namespace_add_containerdistribution`, `manage_roles_containernamespace`,
   and `delete_containerrepository`.
 - For remote registry management, `add_containerregistryremote`, `change_containerregistryremote`, and `delete_containerregistryremote`.
