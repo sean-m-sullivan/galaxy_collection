@@ -1,0 +1,52 @@
+---
+# This workflow action will run pre-commit, which will execute ansible and yaml linting
+# See .pre-commit-config.yaml for what hooks are executed
+name: find-and-replace
+
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  find_and_replace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Find and Replace
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: "ansible.automation_hub"
+          replace: "galaxy.galaxy"
+          regex: false
+          exclude: .github/*
+
+      - name: Find and Replace
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: "ansible automation_hub"
+          replace: "galaxy galaxy"
+          regex: false
+          exclude: .github/*
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: Test find and replace
+          committer: GitHub <noreply@github.com>
+          author: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>
+          signoff: false
+          base: devel
+          branch: find_replace
+          delete-branch: true
+          title: Test Find and replace
+          body: |
+            Test Find and replace
+          labels: |
+            replace
+            automated pr
+          draft: false
+
+...
