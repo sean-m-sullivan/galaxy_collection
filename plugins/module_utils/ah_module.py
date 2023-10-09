@@ -29,6 +29,21 @@ import email.mime.application
 class ItemNotDefined(Exception):
     pass
 
+class AHModuleError(Exception):
+    """API request error exception.
+
+    :param error_message: Error message.
+    :type error_message: str
+    """
+
+    def __init__(self, error_message):
+        """Initialize the object."""
+        self.error_message = error_message
+
+    def __str__(self):
+        """Return the error message."""
+        return self.error_message
+
 
 class AHModule(AnsibleModule):
     url = None
@@ -58,6 +73,24 @@ class AHModule(AnsibleModule):
             required=False,
             fallback=(env_fallback, ["AH_API_TOKEN"]),
         ),
+        ah_sso_token=dict(
+            no_log=True,
+            required=False,
+            fallback=(env_fallback, ["AH_SSO_TOKEN"]),
+        ),
+        ah_cookie=dict(
+            no_log=True,
+            required=False,
+            fallback=(env_fallback, ["AH_API_COOKIE"]),
+        ),
+        ah_auth_url=dict(
+            required=False,
+            fallback=(env_fallback, ["AH_AUTH_URL"]),
+        ),
+        client_id=dict(
+            required=False,
+            fallback=(env_fallback, ["AH_CLIENT_ID"]),
+        ),
         request_timeout=dict(
             type="float",
             required=False,
@@ -69,20 +102,28 @@ class AHModule(AnsibleModule):
         "host": "ah_host",
         "username": "ah_username",
         "password": "ah_password",
-        "verify_ssl": "validate_certs",
         "path_prefix": "ah_path_prefix",
-        "request_timeout": "request_timeout",
+        "verify_ssl": "validate_certs",
         "oauth_token": "ah_token",
+        "sso_token": "ah_sso_token",
+        "auth_cookie": "ah_cookie",
+        "auth_url": "ah_auth_url",
+        "client_id": "client_id",
+        "request_timeout": "request_timeout",
     }
     IDENTITY_FIELDS = {}
     ENCRYPTED_STRING = "$encrypted$"
     host = "127.0.0.1"
-    path_prefix = "galaxy"
     username = None
     password = None
+    path_prefix = "galaxy"
     verify_ssl = True
-    request_timeout = 10
+    auth_url = None
     oauth_token = None
+    sso_token = None
+    auth_cookie = None
+    client_id= "automation-hub" # For Red Hat SSO use 'cloud-services', Keycloak galaxy-ng its 'galaxy-ng'
+    request_timeout = 10
     basic_auth = False
     authenticated = False
     error_callback = None
@@ -102,8 +143,9 @@ class AHModule(AnsibleModule):
 
         if direct_params is not None:
             self.params = direct_params
-        #        else:
+
         super(AHModule, self).__init__(argument_spec=full_argspec, **kwargs)
+
         self.session = Request(cookies=CookieJar(), validate_certs=self.verify_ssl, timeout=self.request_timeout)
 
         # Parameters specified on command line will override settings in any config
@@ -126,27 +168,179 @@ class AHModule(AnsibleModule):
                 error_msg = "The provided ah_token type was not valid ({0}). Valid options are str or dict.".format(type(token_param).__name__)
                 self.fail_json(msg=error_msg)
 
-        # Perform some basic validation
-        if not re.match("^https{0,1}://", self.host):
-            self.host = "https://{0}".format(self.host)
+        # Start Session
+        # self.headers = {
+        #     "referer": self.host,
+        #     "Content-Type": "application/json",
+        #     "Accept": "application/json",
+        # }
 
-        # Try to parse the hostname as a url
-        try:
-            self.url = urlparse(self.host)
-        except Exception as e:
-            self.fail_json(msg="Unable to parse ah host as a URL ({1}): {0}".format(self.host, e))
-
-        # Try to resolve the hostname
-        hostname = self.url.netloc.split(":")[0]
-        try:
-            gethostbyname(hostname)
-        except Exception as e:
-            self.fail_json(msg="Unable to resolve ah host ({1}): {0}".format(hostname, e))
+        # Perform some validations on urls
+        self.host_url = urlparse(self.validate_url(self.host))
+        if self.auth_url is not None:
+            self.authorized_url = urlparse(self.validate_url(self.auth_url))
 
         if "update_secrets" in self.params:
             self.update_secrets = self.params.pop("update_secrets")
         else:
             self.update_secrets = True
+
+        # Set the various path prefixes
+        self.galaxy_path_prefix = "/api/{prefix}".format(prefix=self.path_prefix.strip("/"))
+        self.ui_path_prefix = "{galaxy_prefix}/_ui/v1".format(galaxy_prefix=self.galaxy_path_prefix)
+        self.plugin_path_prefix = "{galaxy_prefix}/v3/plugin".format(galaxy_prefix=self.galaxy_path_prefix)
+
+        # Open a Session
+        self.session = Request(validate_certs=self.verify_ssl, follow_redirects=True, timeout=self.request_timeout)
+        self.authenticate()
+        self.server_version = self.get_server_version()
+
+    def validate_url(self, url):
+        # Perform some basic validation
+        if re.match("^http{0,1}://", url):
+            validated_url = url
+        elif not re.match("^https{0,1}://", url):
+            validated_url = "https://{0}".format(url)
+        elif re.match("^https{0,1}://", url):
+            validated_url = url
+        else:
+            self.fail_json(msg="Unable to parse host protocol as a URL ({1}): {0}".format(url, e))
+
+        # Try to parse the hostname as a url
+        try:
+            parsed_validated_url = urlparse(validated_url)
+        except Exception as e:
+            self.fail_json(msg="Unable to parse host as a URL ({1}): {0}".format(parsed_validated_url, e))
+        return validated_url
+
+    def authenticate(self):
+        """Authenticate with the API."""
+        # curl -k -i  -X GET -H "Accept: application/json" -H "Content-Type: application/json" https://hub.lab.example.com/api/galaxy/_ui/v1/auth/login/
+
+        # HTTP/1.1 204 No Content
+        # Server: nginx/1.18.0
+        # Date: Tue, 10 Aug 2021 07:33:37 GMT
+        # Content-Length: 0
+        # Connection: keep-alive
+        # Vary: Accept, Cookie
+        # Allow: GET, POST, HEAD, OPTIONS
+        # X-Frame-Options: SAMEORIGIN
+        # Set-Cookie: csrftoken=jvdb...kKHo; expires=Tue, 09 Aug 2022 07:33:37 GMT; Max-Age=31449600; Path=/; SameSite=Lax
+        # Strict-Transport-Security: max-age=15768000
+
+        url = self.build_ui_url("auth/login")
+        try:
+            response = self.make_request_raw_reponse("GET", url)
+        except AHModuleError as e:
+            self.fail_json(msg="Unable to reach url:{url} error: {error}".format(error=e, url=url))
+        # Set-Cookie: csrftoken=jvdb...kKHo; expires=Tue, 09 Aug 2022 07:33:37 GMT
+        # for h in response.getheaders():
+        #     if h[0].lower() == "set-cookie":
+        #         k, v = h[1].split("=", 1)
+        #         if k.lower() == "csrftoken":
+        #             header = {"X-CSRFToken": v.split(";", 1)[0]}
+        #             self.session.headers.update(header)
+        #             break
+        # self.fail_json(msg="head: {error}".format(error=response.getheaders()))
+        # curl -k -i -X POST  -H 'referer: https://hub.lab.example.com' -H "Accept: application/json" -H "Content-Type: application/json"
+        #      -H 'X-CSRFToken: jvdb...kKHo' --cookie 'csrftoken=jvdb...kKHo' -d '{"username":"admin","password":"redhat"}'
+        #      https://hub.lab.example.com/api/galaxy/_ui/v1/auth/login/
+
+        # HTTP/1.1 204 No Content
+        # Server: nginx/1.18.0
+        # Date: Tue, 10 Aug 2021 07:35:33 GMT
+        # Content-Length: 0
+        # Connection: keep-alive
+        # Vary: Accept, Cookie
+        # Allow: GET, POST, HEAD, OPTIONS
+        # X-Frame-Options: SAMEORIGIN
+        # Set-Cookie: csrftoken=6DVP...at9a; expires=Tue, 09 Aug 2022 07:35:33 GMT; Max-Age=31449600; Path=/; SameSite=Lax
+        # Set-Cookie: sessionid=87b0iw12wyvy0353rk5fwci0loy5s615; expires=Tue, 24 Aug 2021 07:35:33 GMT; HttpOnly; Max-Age=1209600; Path=/; SameSite=Lax
+        # Strict-Transport-Security: max-age=15768000
+        ## Add cookie if provided
+        # if self.auth_cookie: # If we can ever get cookies to work
+        #     try:
+        #         header = {"X-CSRFToken": self.auth_cookie}
+        #         response = self.make_request_raw_reponse("GET", url)
+        #         self.authenticated = True
+        #     except AHModuleError as e:
+        #         self.fail_json(msg="Authentication with cookie error: {error}".format(error=e))
+        if self.sso_token:  # NOT working when passing in curl cookie
+            # https://github.com/ansible/ansible/blob/8a5ccc9d63ab528b579c14c4519c70c6838c7d6c/lib/ansible/galaxy/token.py#L44
+            # https://access.redhat.com/documentation/en-us/red_hat_process_automation_manager/7.4/html/integrating_red_hat_process_automation_manager_with_red_hat_single_sign-on/sso-third-party-proc_integrate-sso
+            # https://access.redhat.com/documentation/en-us/red_hat_single_sign-on/7.4/html/server_administration_guide/sso_protocols#authorization_code_flow
+            # https://access.redhat.com/solutions/3234871
+            # https://github.com/ansible/ansible/pull/75601
+            try:
+                # Refresh the token we have
+                # data={
+                # 'grant_type': 'refresh_token',
+                # 'client_id': self.client_id,
+                # 'refresh_token': self.sso_token,
+                # }
+                # data = 'grant_type=refresh_token&client_id=%s&refresh_token=%s' % (self.client_id, self.sso_token)
+                # header = {"Content-Type":  'application/x-www-form-urlencoded'}
+                # response = self.make_request_raw_reponse("POST", self.authorized_url, headers=header, data=data)
+                # Now test it and set it
+                header = {"Authorization": "Bearer {0}".format(self.sso_token)}
+                response = self.make_request_raw_reponse("GET", self._build_url(self.galaxy_path_prefix))
+                #self.update_cookie(response)
+                self.session.headers.update(header)
+                self.authenticated = True
+            except AHModuleError as e:
+                self.fail_json(msg="Authentication with cookie error: {error}".format(error=e))
+        elif self.oauth_token:  # Tested
+            try:
+                header = {"Authorization": "Token {0}".format(self.oauth_token)}
+                #self.session.headers.update(header)
+                self.make_request_raw_reponse("GET", url)
+                self.session.headers.update(header)
+                #self.fail_json(msg="header: {header}".format(header=response.getheaders()))
+                #self.update_cookie(response)
+                #self.fail_json(msg="header: {header}".format(header=self.session.headers))
+                self.authenticated = True
+                #self.fail_json(msg="{error}".format(error=response.getheaders()))
+            except AHModuleError as e:
+                self.fail_json(msg="Authentication with cookie error: {error}".format(error=e))
+        elif self.username and self.password: # Tested
+            try:
+                basic_str = base64.b64encode("{0}:{1}".format(self.username, self.password).encode("ascii"))
+                header = {"Authorization": "Basic {0}".format(basic_str.decode("ascii"))}
+                self.make_request_raw_reponse("GET", url)
+                self.session.headers.update(header)
+            except AHModuleError as e:
+                self.fail_json(msg="Authentication error: {error}".format(error=e))
+            self.authenticated = True
+
+    def update_cookie(self, response):
+        for h in response.getheaders():
+            if h[0].lower() == "set-cookie":
+                k, v = h[1].split("=", 1)
+                if k.lower() == "csrftoken":
+                    header = {"X-CSRFToken": v.split(";", 1)[0]}
+                    self.session.headers.update(header)
+                    break
+
+    def get_server_version(self):
+        """Return the automation hub/galaxy server version.
+
+        :return: the server version ("4.2.5" for example) or an empty string if
+                 that information is not available.
+        :rtype: str
+        """
+        url = self._build_url(self.galaxy_path_prefix)
+        try:
+            response = self.make_request("GET", url)
+        except AHModuleError as e:
+            self.fail_json(msg="Error while getting server version: {error}".format(error=e))
+        if response["status_code"] != 200:
+            error_msg = self.extract_error_msg(response)
+            if error_msg:
+                fail_msg = "Unable to get server version: {code}: {error}".format(code=response["status_code"], error=error_msg)
+            else:
+                fail_msg = "Unable to get server version: {code}".format(code=response["status_code"])
+            self.fail_json(msg=fail_msg)
+        return response["json"]["server_version"].replace('dev', '') if "server_version" in response["json"] else ""
 
     def build_url(self, endpoint, query_params=None):
         # Make sure we start with /api/vX
@@ -158,12 +352,70 @@ class AHModule(AnsibleModule):
             endpoint = "{0}/".format(endpoint)
 
         # Update the URL path with the endpoint
-        url = self.url._replace(path=endpoint)
+        url = self.host_url._replace(path=endpoint)
 
         if query_params:
             url = url._replace(query=urlencode(query_params))
 
         return url
+
+    def _build_url(self, prefix, endpoint=None, query_params=None):
+        """Return a URL from the given prefix and endpoint.
+
+        The URL is build as follows::
+
+            https://<host>/<prefix>/[<endpoint>]/[?<query>]
+
+        :param prefix: Prefix to add to the endpoint.
+        :type prefix: str
+        :param endpoint: Usually the API object name ("users", "groups", ...)
+        :type endpoint: str
+        :param query_params: The optional query to append to the URL
+        :type query_params: dict
+
+        :return: The full URL built from the given prefix and endpoint.
+        :rtype: :py:class:``urllib.parse.ParseResult``
+        """
+        if endpoint is None:
+            api_path = "/{base}/".format(base=prefix.strip("/"))
+        elif "?" in endpoint:
+            api_path = "{base}/{endpoint}".format(base=prefix, endpoint=endpoint.strip("/"))
+        else:
+            api_path = "{base}/{endpoint}/".format(base=prefix, endpoint=endpoint.strip("/"))
+        url = self.host_url._replace(path=api_path)
+        if query_params:
+            url = url._replace(query=urlencode(query_params))
+        return url
+
+    def build_ui_url(self, endpoint, query_params=None):
+        """Return the URL of the given endpoint in the UI API.
+
+        :param endpoint: Usually the API object name ("users", "groups", ...)
+        :type endpoint: str
+        :return: The full URL built from the given endpoint.
+        :rtype: :py:class:``urllib.parse.ParseResult``
+        """
+        return self._build_url(self.ui_path_prefix, endpoint, query_params)
+
+    def build_plugin_url(self, endpoint, query_params=None):
+        """Return the URL of the given endpoint in the UI API.
+
+        :param endpoint: Usually the API object name ("users", "groups", ...)
+        :type endpoint: str
+        :return: The full URL built from the given endpoint.
+        :rtype: :py:class:``urllib.parse.ParseResult``
+        """
+        return self._build_url(self.plugin_path_prefix, endpoint, query_params)
+
+    def build_pulp_url(self, endpoint, query_params=None):
+        """Return the URL of the given endpoint in the Pulp API.
+
+        :param endpoint: Usually the API object name ("users", "groups", ...)
+        :type endpoint: str
+        :return: The full URL built from the given endpoint.
+        :rtype: :py:class:``urllib.parse.ParseResult``
+        """
+        return self._build_url(self.pulp_path_prefix, endpoint, query_params)
 
     def fail_json(self, **kwargs):
         # Try to log out if we are authenticated
@@ -187,44 +439,89 @@ class AHModule(AnsibleModule):
         return AHModule.IDENTITY_FIELDS.get(endpoint, "name")
 
     def get_endpoint(self, endpoint, *args, **kwargs):
-        return self.make_request("GET", endpoint, **kwargs)
+        url = self.build_url(endpoint, query_params=kwargs.get("data"))
+        return self.make_request("GET", url, **kwargs)
 
-    def make_request(self, method, endpoint, *args, **kwargs):
+    def make_request(self, method, url, wait_for_task=True, **kwargs):
+        """Perform an API call and return the data.
+
+        :param method: GET, PUT, POST, or DELETE
+        :type method: str
+        :param url: URL to the API endpoint
+        :type url: :py:class:``urllib.parse.ParseResult``
+        :param kwargs: Additionnal parameter to pass to the API (headers, data
+                       for PUT and POST requests, ...)
+
+        :raises AHModuleError: The API request failed.
+
+        :return: A dictionnary with two entries: ``status_code`` provides the
+                 API call returned code and ``json`` provides the returned data
+                 in JSON format.
+        :rtype: dict
+        """
+        response = self.make_request_raw_reponse(method, url, **kwargs)
+
+        try:
+            response_body = response.read()
+        except Exception as e:
+            if response["json"]["non_field_errors"]:
+                raise AHModuleError("Errors occurred with request (HTTP 400). Errors: {errors}".format(errors=response["json"]["non_field_errors"]))
+            elif response["json"]["errors"]:
+                raise AHModuleError("Errors occurred with request (HTTP 400). Errors: {errors}".format(errors=response["json"]["errors"]))
+            elif response["text"]:
+                raise AHModuleError("Errors occurred with request (HTTP 400). Errors: {errors}".format(errors=response["text"]))
+            raise AHModuleError("Failed to read response body: {error}".format(error=e))
+
+        response_json = {}
+        if response_body and response_body != "":
+            try:
+                response_json = loads(response_body)
+            except Exception as e:
+                raise AHModuleError("Failed to parse the response json: {0}".format(e))
+
+        # A background task has been triggered. Check if the task is completed
+        if response.status == 202 and "task" in response_json and wait_for_task:
+            url = url._replace(path=response_json["task"], query="")
+            for _count in range(5):
+                time.sleep(3)
+                bg_task = self.make_request("GET", url)
+                if "state" in bg_task["json"] and bg_task["json"]["state"].lower().startswith("complete"):
+                    break
+            else:
+                if "state" in bg_task["json"]:
+                    raise AHModuleError(
+                        "Failed to get the status of the remote task: {task}: last status: {status}".format(
+                            task=response_json["task"], status=bg_task["json"]["state"]
+                        )
+                    )
+                raise AHModuleError("Failed to get the status of the remote task: {task}".format(task=response_json["task"]))
+
+        return {"status_code": response.status, "json": response_json}
+
+    def make_request_raw_reponse(self, method, url, **kwargs):
         # In case someone is calling us directly; make sure we were given a method, let's not just assume a GET
         if not method:
             raise Exception("The HTTP method must be defined")
 
-        # Extract the headers, this will be used in a couple of places
-        headers = kwargs.get("headers", {})
+        #headers = kwargs.get("headers", self.headers)
 
-        # Authenticate to Automation Hub (if we don't have a token and if not already done so)
-        if not self.oauth_token and not self.authenticated:
-            # This method will set a cookie in the cookie jar for us and also an oauth_token
-            self.authenticate(**kwargs)
-        if self.oauth_token:
-            # If we have a oauth token, we just use a bearer header
-            headers["Authorization"] = "Token {0}".format(self.oauth_token)
-        elif self.basic_auth:
-            basic_str = base64.b64encode("{0}:{1}".format(self.username, self.password).encode("ascii"))
-            headers["Authorization"] = "Basic {0}".format(basic_str.decode("ascii"))
-        if method in ["POST", "PUT", "PATCH"]:
-            headers.setdefault("Content-Type", "application/json")
-            kwargs["headers"] = headers
-            url = self.build_url(endpoint)
-        else:
-            url = self.build_url(endpoint, query_params=kwargs.get("data"))
-
+        # May need reworked
         data = None  # Important, if content type is not JSON, this should not be dict type
-        if headers.get("Content-Type", "") == "application/json":
-            data = dumps(kwargs.get("data", {}))
-        elif kwargs.get("binary", False):
-            data = kwargs.get("data", None)
+        # if headers.get("Content-Type", "") == "application/x-www-form-urlencoded":
+        #     data = kwargs.get("data", None)
+        # elif headers.get("Content-Type", "") == "application/json":
+        #     data = dumps(kwargs.get("data", {}))
+        # elif kwargs.get("binary", False):
+        #     data = kwargs.get("data", None)
 
+        # set default response
+        response = {}
+        # if url == self.authorized_url:
+        #     self.fail_json(msg="{error}".format(error=self.verify_ssl))
         try:
             response = self.session.open(
                 method,
                 url.geturl(),
-                headers=headers,
                 validate_certs=self.verify_ssl,
                 timeout=self.request_timeout,
                 follow_redirects=True,
@@ -240,10 +537,10 @@ class AHModule(AnsibleModule):
                 self.fail_json(msg="The host sent back a server error ({1}): {0}. Please check the logs and try again later".format(url.path, he))
             # Sanity check: Did we fail to authenticate properly?  If so, fail out now; this is always a failure.
             elif he.code == 401:
-                self.fail_json(msg="Invalid Automation Hub authentication credentials for {0} (HTTP 401).".format(url.path))
+                self.fail_json(msg="Invalid Automation Hub authentication credentials for url:{0} headers:{1} (HTTP 401).".format(url.path, self.session.headers))
             # Sanity check: Did we get a forbidden response, which means that the user isn't allowed to do this? Report that.
             elif he.code == 403:
-                self.fail_json(msg="You don't have permission to {1} to {0} (HTTP 403).".format(url.path, method))
+                self.fail_json(msg="You don't have permission to {2} , {1} to {0} (HTTP 403).".format(url.geturl(), method, self.session.headers))
             # Sanity check: Did we get a 404 response?
             # Requests with primary keys will return a 404 if there is no response, and we want to consistently trap these.
             elif he.code == 404:
@@ -282,24 +579,8 @@ class AHModule(AnsibleModule):
         except (Exception) as e:
             self.fail_json(msg="There was an unknown error when trying to connect to {2}: {0} {1}".format(type(e).__name__, e, url.geturl()))
 
-        response_body = ""
-        try:
-            response_body = response.read()
-        except (Exception) as e:
-            self.fail_json(msg="Failed to read response body: {0}".format(e))
+        return response
 
-        response_json = {}
-        if response_body and response_body != "":
-            try:
-                response_json = loads(response_body)
-            except (Exception) as e:
-                self.fail_json(msg="Failed to parse the response json: {0}".format(e))
-
-        if PY2:
-            status_code = response.getcode()
-        else:
-            status_code = response.status
-        return {"status_code": status_code, "json": response_json}
 
     def get_one(self, endpoint, name_or_id=None, allow_none=True, **kwargs):
         new_kwargs = kwargs.copy()
@@ -370,56 +651,66 @@ class AHModule(AnsibleModule):
 
         return self.existing_item_add_url(response["json"], endpoint, key=key)
 
-    def authenticate(self, **kwargs):
-        if self.username and self.password:
-            # Attempt to get a token from /v3/auth/token/ by giving it our username/password combo
-            # If we have a username and password, we need to get a session cookie
-            api_token_url = self.build_url("auth/token").geturl()
-            try:
-                try:
-                    response = self.session.open(
-                        "POST",
-                        api_token_url,
-                        validate_certs=self.verify_ssl,
-                        timeout=self.request_timeout,
-                        follow_redirects=True,
-                        force_basic_auth=True,
-                        url_username=self.username,
-                        url_password=self.password,
-                        headers={"Content-Type": "application/json"},
-                    )
-                except HTTPError:
-                    test_url = self.build_url("namespaces").geturl()
-                    self.basic_auth = True
-                    basic_str = base64.b64encode("{0}:{1}".format(self.username, self.password).encode("ascii"))
-                    response = self.session.open(
-                        "GET",
-                        test_url,
-                        validate_certs=self.verify_ssl,
-                        timeout=self.request_timeout,
-                        headers={
-                            "Content-Type": "application/json",
-                            "Authorization": "Basic {0}".format(basic_str.decode("ascii")),
-                        },
-                    )
-            except HTTPError as he:
-                try:
-                    resp = he.read()
-                except Exception as e:
-                    resp = "unknown {0}".format(e)
-                self.fail_json(msg="Failed to get token: {0}".format(he), response=resp)
-            except (Exception) as e:
-                # Sanity check: Did the server send back some kind of internal error?
-                self.fail_json(msg="Failed to get token: {0}".format(e))
+    def keycloak_auth(self, **kwargs):
+        try:
+            response = self.session.open(
+                "POST",
+                self.auth_url,
+                validate_certs=self.verify_ssl,
+                timeout=self.request_timeout,
+                follow_redirects=True,
+                data = 'grant_type=refresh_token&client_id=%s&refresh_token=%s' % (self.client_id,
+                                                                           self.access_token)
+            )
+            data = loads(to_text(response.read(), errors='surrogate_or_strict'))
+            external_token = data.get('access_token')
+            self.authenticated = True
+            return external_token
 
-            token_response = None
-            if not self.basic_auth:
-                try:
-                    token_response = response.read()
-                    response_json = loads(token_response)
-                    self.oauth_token = response_json["token"]
-                except (Exception) as e:
-                    self.fail_json(msg="Failed to extract token information from login response: {0}".format(e), **{"response": token_response})
+        except (Exception) as e:
+            # Sanity check: Did the server send back some kind of internal error?
+            self.fail_json(msg="Failed to use auth server: {0}".format(e))
+
+    def basic_authenticate(self, **kwargs):
+        # Attempt to get a token from /v3/auth/token/ by giving it our username/password combo
+        # If we have a username and password, we need to get a session cookie
+        api_token_url = self.build_url("auth/token").geturl()
+        try:
+            try:
+                self.session.open(
+                    "POST",
+                    api_token_url,
+                    validate_certs=self.verify_ssl,
+                    timeout=self.request_timeout,
+                    follow_redirects=True,
+                    force_basic_auth=True,
+                    url_username=self.username,
+                    url_password=self.password,
+                    headers={"Content-Type": "application/json"},
+                )
+            except HTTPError:
+                test_url = self.build_url("namespaces").geturl()
+                self.basic_auth = True
+                basic_str = base64.b64encode("{0}:{1}".format(self.username, self.password).encode("ascii"))
+                self.session.open(
+                    "GET",
+                    test_url,
+                    validate_certs=self.verify_ssl,
+                    timeout=self.request_timeout,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": "Basic {0}".format(basic_str.decode("ascii")),
+                    },
+                )
+        except HTTPError as he:
+            try:
+                resp = he.read()
+            except Exception as e:
+                resp = "unknown {0}".format(e)
+            self.fail_json(msg="Failed to use basic auth: {0}".format(he), response=resp)
+        except (Exception) as e:
+            # Sanity check: Did the server send back some kind of internal error?
+            self.fail_json(msg="Failed to use basic auth: {0}".format(e))
 
         # If we have neither of these, then we can try un-authenticated access
         self.authenticated = True
@@ -693,7 +984,6 @@ class AHModule(AnsibleModule):
         if PY3:
             parser = email.parser.BytesHeaderParser().parsebytes
         else:
-            # Py2
             parser = email.parser.HeaderParser().parsestr
 
         return (
@@ -869,24 +1159,24 @@ class AHModule(AnsibleModule):
         if self.check_mode:
             self.json_output["changed"] = True
             self.exit_json(**self.json_output)
-
-        return self.make_request("POST", endpoint, **kwargs)
+        url = self.build_url(endpoint, query_params=kwargs.get("data"))
+        return self.make_request("POST", url, **kwargs)
 
     def patch_endpoint(self, endpoint, *args, **kwargs):
         # Handle check mode
         if self.check_mode:
             self.json_output["changed"] = True
             self.exit_json(**self.json_output)
-
-        return self.make_request("PATCH", endpoint, **kwargs)
+        url = self.build_url(endpoint, query_params=kwargs.get("data"))
+        return self.make_request("PATCH", url, **kwargs)
 
     def put_endpoint(self, endpoint, *args, **kwargs):
         # Handle check mode
         if self.check_mode:
             self.json_output["changed"] = True
             self.exit_json(**self.json_output)
-
-        return self.make_request("PUT", endpoint, **kwargs)
+        url = self.build_url(endpoint, query_params=kwargs.get("data"))
+        return self.make_request("PUT", url, **kwargs)
 
     def get_all_endpoint(self, endpoint, *args, **kwargs):
         response = self.get_endpoint(endpoint, *args, **kwargs)
