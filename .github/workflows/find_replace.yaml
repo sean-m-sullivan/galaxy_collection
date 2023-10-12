@@ -1,0 +1,26 @@
+name: My Workflow
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Find and Replace
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: "galaxy.galaxy"
+          replace: "infra.ah_configuration"
+          regex: false
+      - name: Find and Replace
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: "galaxy.galaxy"
+          replace: "infra.ah_configuration"
+          regex: false
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v5
