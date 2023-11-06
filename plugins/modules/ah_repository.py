@@ -154,6 +154,7 @@ EXAMPLES = """
     name: community
     url: https://galaxy.ansible.com/api/
     requirements_file: "/tmp/requirements.yml"
+...
 """
 
 from ..module_utils.ah_module import AHModule

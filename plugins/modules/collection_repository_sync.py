@@ -61,6 +61,7 @@ EXAMPLES = """
     name: community
     wait: true
     timeout: 60
+...
 """
 
 from ..module_utils.ah_api_module import AHAPIModule

@@ -55,7 +55,7 @@ EXAMPLES = """
     path: /home/ansible/ah_configuration
     force: true
     output_path: /var/tmp
-
+...
 """
 
 from ..module_utils.ah_module import AHModule

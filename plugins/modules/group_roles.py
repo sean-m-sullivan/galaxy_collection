@@ -126,6 +126,7 @@ EXAMPLES = """
     ah_host: hub.example.com
     ah_username: admin
     ah_password: Sup3r53cr3t
+...
 """
 
 from ..module_utils.ah_api_module import AHAPIModule

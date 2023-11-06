@@ -62,6 +62,7 @@ EXAMPLES = """
     name: ansible-automation-platform-21/ee-supported-rhel8
     wait: true
     timeout: 300
+...
 """
 
 from ..module_utils.ah_api_module import AHAPIModule

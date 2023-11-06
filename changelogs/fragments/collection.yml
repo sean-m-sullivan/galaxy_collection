@@ -1,0 +1,5 @@
+---
+bugfixes:
+  - Fix issue using the ah_collection module/ collection role with newer versions of the application.
+  - Added option to ah_collection module, and collection/publish roles to be able to select a repository to use.
+...

@@ -142,6 +142,7 @@ EXAMPLES = r"""
     ah_host: hub.example.com
     ah_username: admin
     ah_password: Sup3r53cr3t
+...
 """
 
 RETURN = r""" # """

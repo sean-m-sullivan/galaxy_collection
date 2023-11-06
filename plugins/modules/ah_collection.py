@@ -39,6 +39,11 @@ options:
       description:
         - Collection Version. Must be lower case containing only alphanumeric characters and underscores.
       type: str
+    repository:
+      description:
+        - Which Repository to publish to. Most likely this is 'published' or one that has been created.
+      type: str
+      default: 'published'
     path:
       description:
         - Collection artifact file path.
@@ -102,9 +107,11 @@ EXAMPLES = """
     name: test
     version: 4.1.2
     state: absent
+...
 """
 
 from ..module_utils.ah_module import AHModule
+from ..module_utils.ah_api_module import AHAPIModule
 import pathlib
 
 
@@ -120,11 +127,13 @@ def main():
         auto_approve=dict(type="bool", default=True),
         overwrite_existing=dict(type="bool", default=False),
         version=dict(),
+        repository=dict(default="published"),
         state=dict(choices=["present", "absent"], default="present"),
     )
 
     # Create a module for ourselves
     module = AHModule(argument_spec=argument_spec)
+    api_module = AHAPIModule(argument_spec=argument_spec)
 
     # Extract our parameters
     namespace = module.params.get("namespace")
@@ -136,22 +145,36 @@ def main():
     overwrite_existing = module.params.get("overwrite_existing")
     auto_approve = module.params.get("auto_approve")
     version = module.params.get("version")
+    repository = module.params.get("repository")
     state = module.params.get("state")
 
-    # approval needs a version, if one is not defined find it from the filename.
-    if auto_approve:
+    # Endpoint moved in more recent versions
+    vers = api_module.get_server_version()
+
+    # approval, overwrite, and other methods needs a version, if one is not defined find it from the filename.
+    if state == 'present':
         if version:
             pass
-        else:
+        elif path:
             version = path.split("-")[-1].replace('.tar.gz', '')
+        else:
+            module.fail_json(msg="If state is not present version must be supplied through the path or the version parameter.")
 
     # Attempt to look up an existing item based on the provided data
-    if version:
-        collection_endpoint = "collections/{0}/{1}/versions/{2}".format(namespace, name, version)
-    else:
-        collection_endpoint = "collections/{0}/{1}".format(namespace, name)
-
-    existing_item = module.get_endpoint(collection_endpoint, **{"return_none_on_404": True})
+    if vers > "4.7.0":
+        if version:
+            collection_endpoint = module.build_collection_url(repository, namespace, name, version)
+        else:
+            collection_endpoint = module.build_collection_url(repository, namespace, name)
+        existing_item = api_module.make_request("GET", collection_endpoint, **{"return_none_on_404": True})
+        if existing_item is not None:
+            module.json_output["endpoint"] = collection_endpoint
+    elif vers < "4.7.0":
+        if version:
+            collection_endpoint = "collections/{0}/{1}/versions/{2}".format(namespace, name, version)
+        else:
+            collection_endpoint = "collections/{0}/{1}".format(namespace, name)
+        existing_item = module.get_endpoint(collection_endpoint, **{"return_none_on_404": True})
 
     # If state is absent, check if it exists, delete and exit.
     if state == "absent":
@@ -170,6 +193,7 @@ def main():
             module.fail_json(msg="Could not find Collection {0}.{1} in path {2}".format(namespace, name, path))
 
     if path:
+        collection_endpoint = "collections/{0}/{1}/versions/{2}".format(namespace, name, version)
         if existing_item is not None and overwrite_existing:
             # Delete collection
             module.json_output["task"] = module.delete_endpoint(existing_item["json"]["href"])["json"]["task"]
@@ -177,6 +201,7 @@ def main():
             # Upload new collection
             module.upload(path, "artifacts/collections", wait, item_type="collections")
             module.json_output["changed"] = True
+            module.json_output["endpoint"] = collection_endpoint
             # Get new collection version
             existing_item = module.get_endpoint(collection_endpoint, **{"return_none_on_404": True})
             if auto_approve:
@@ -191,6 +216,7 @@ def main():
             if auto_approve:
                 module.approve(
                     endpoint=collection_endpoint,
+                    repository=repository,
                     timeout=timeout,
                     interval=interval
                 )

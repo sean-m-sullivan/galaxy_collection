@@ -64,6 +64,7 @@ EXAMPLES = """
     name: registry_redhat_io
     wait: true
     timeout: 300
+...
 """
 
 from ..module_utils.ah_api_module import AHAPIModule

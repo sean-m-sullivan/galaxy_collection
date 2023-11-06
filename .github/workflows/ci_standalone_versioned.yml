@@ -115,11 +115,11 @@ jobs:
 
       - name: "Perform playbook collection tests"
         run: ansible-playbook tests/playbooks/testing_collections_playbook.yml -v -e galaxy_ng_version=${{ inputs.galaxy_ng_version }} -e git_repo_name=${{ github.event.repository.name }}
-        if: |
-          inputs.galaxy_ng_version == 'stable-4.4' ||
-          inputs.galaxy_ng_version == 'stable-4.5' ||
-          inputs.galaxy_ng_version == 'stable-4.6' ||
-          inputs.galaxy_ng_version == 'stable-4.7'
+        # if: |
+        #  inputs.galaxy_ng_version == 'stable-4.4' ||
+        #  inputs.galaxy_ng_version == 'stable-4.5' ||
+        #  inputs.galaxy_ng_version == 'stable-4.6' ||
+        #  inputs.galaxy_ng_version == 'stable-4.7'
 
 
       - name: "Perform collection repository tests"

@@ -40,7 +40,11 @@ options:
         - The version of the collection.
       required: True
       type: str
-
+    repository:
+      description:
+        - Which Repository to publish to. Most likely this is 'published' or one that has been created.
+      type: str
+      default: 'published'
 extends_documentation_fragment: galaxy.galaxy.auth
 """
 
@@ -51,7 +55,7 @@ EXAMPLES = """
     namespace: namespace
     name: collection_name
     version: v1.0.0
-
+...
 """
 
 from ..module_utils.ah_module import AHModule
@@ -63,6 +67,7 @@ def main():
         namespace=dict(required=True),
         name=dict(required=True),
         version=dict(required=True),
+        repository=dict(default="published"),
     )
 
     # Create a module for ourselves
@@ -72,6 +77,7 @@ def main():
     namespace = module.params.get("namespace")
     name = module.params.get("name")
     version = module.params.get("version")
+    repository = module.params.get("repository")
 
     endpoint = "collections/{0}/{1}/versions/{2}".format(namespace, name, version)
 
@@ -84,6 +90,7 @@ def main():
 
     module.approve(
         endpoint=endpoint,
+        repository=repository,
     )
 
 

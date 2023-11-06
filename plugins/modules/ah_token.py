@@ -62,6 +62,7 @@ EXAMPLES = """
 - name: Use our new token to make another call
   namespace:
     ah_token: "{{ ah_token }}"
+...
 """
 
 RETURN = """

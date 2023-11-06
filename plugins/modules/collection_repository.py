@@ -135,6 +135,7 @@ EXAMPLES = """
   collection_repository:
     name: foobar
     state: absent
+...
 """
 
 from ..module_utils.ah_api_module import AHAPIModule

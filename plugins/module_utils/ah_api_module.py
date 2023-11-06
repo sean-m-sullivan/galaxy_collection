@@ -244,7 +244,10 @@ class AHAPIModule(AnsibleModule):
             # Sanity check: Did we get a 404 response?
             # Requests with primary keys will return a 404 if there is no response, and we want to consistently trap these.
             elif he.code == 404:
-                raise AHAPIModuleError("The requested object could not be found at {path}.".format(path=url.path))
+                if kwargs.get("return_none_on_404", False):
+                    return None
+                if kwargs.get("return_errors_on_404", False):
+                    raise AHAPIModuleError("The requested object could not be found at {path}.".format(path=url.path))
             # Sanity check: Did we get a 405 response?
             # A 405 means we used a method that isn't allowed. Usually this is a bad request, but it requires special treatment because the
             # API sends it as a logic error in a few situations (e.g. trying to cancel a job that isn't running).
@@ -289,6 +292,10 @@ class AHAPIModule(AnsibleModule):
         :rtype: dict
         """
         response = self.make_request_raw_reponse(method, url, **kwargs)
+
+        # if return_none_on_404 is true it will return None
+        if response is None:
+            return None
 
         try:
             response_body = response.read()

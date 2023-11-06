@@ -165,6 +165,23 @@ class AHModule(AnsibleModule):
 
         return url
 
+    def build_collection_url(self, repository, namespace, name, version=None):
+        # Make sure we start with /api/vX
+        endpoint = ''
+        if not endpoint.startswith("/"):
+            endpoint = "/{0}".format(endpoint)
+        if not endpoint.startswith("/api/"):
+            endpoint = "api/{0}/content/{1}/v3/plugin/ansible/content/{1}/collections/index/{2}/{3}".format(self.path_prefix, repository, namespace, name)
+        if version:
+            endpoint = "{0}/versions/{1}/".format(endpoint, version)
+        if not endpoint.endswith("/") and "?" not in endpoint:
+            endpoint = "{0}/".format(endpoint)
+
+        # Update the URL path with the endpoint
+        url = self.url._replace(path=endpoint)
+
+        return url
+
     def fail_json(self, **kwargs):
         # Try to log out if we are authenticated
         if self.error_callback:
@@ -610,9 +627,9 @@ class AHModule(AnsibleModule):
             last_data = response["json"]
             return last_data
 
-    def approve(self, endpoint, timeout=None, interval=10.0, auto_exit=True):
+    def approve(self, endpoint, repository='published', timeout=None, interval=10.0, auto_exit=True):
 
-        approvalEndpoint = "move/staging/published"
+        approvalEndpoint = "move/staging/{0}".format(repository)
 
         if not endpoint:
             self.fail_json(msg="Unable to approve due to missing endpoint")

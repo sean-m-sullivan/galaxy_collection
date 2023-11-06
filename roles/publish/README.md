@@ -18,6 +18,7 @@ An Ansible Role to publish collections to Automation Hub or Galaxies.
 |`ah_configuration_async_dir`|`null`|no|Sets the directory to write the results file for async tasks. The default value is set to `null` which uses the Ansible Default of `/root/.ansible_async/`.||
 |`ah_configuration_working_dir`|`/var/tmp`|no|The working directory where the built artifacts live, or where the artifacts will be built.||
 |`ah_auto_approve`|`False`|no|Whether the collection will be automatically approved in Automation Hub. This will only work if the account being used has correct privileges.||
+|`ah_collection_repository`|`published`|no|Repository to publish the collection in. This defaults to 'published' which is the only repository to use unless you create a special one.||
 |`ah_overwrite_existing`|`False`|no|Whether the collection will be automatically overwrite an existing collection in Automation Hub. This will only work if the account being used has correct privileges.||
 |`ah_collections`|`see below`|no|Data structure describing your collections, mutually exclusive to ah_collection_list, described below.||
 |`ah_collection_list`|`list`|no|Data structure file paths to pre built collections, mutually exclusive with ah_collections.||

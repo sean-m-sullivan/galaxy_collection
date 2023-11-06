@@ -101,7 +101,7 @@ EXAMPLES = """
     groups:
       - system:partner-engineers
       - admins
-
+...
 """
 
 from ..module_utils.ah_module import AHModule

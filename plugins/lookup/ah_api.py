@@ -95,6 +95,7 @@ EXAMPLES = """
   set_fact:
     collection_versions: "{{ lookup('galaxy.galaxy.ah_api', 'collection', 'published', 'fake_namespace',
                             'collection_name').all_versions | map(attribute='version') | list }}"
+...
 """
 
 RETURN = """
