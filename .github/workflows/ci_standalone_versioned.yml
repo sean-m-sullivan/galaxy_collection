@@ -44,9 +44,9 @@ jobs:
           path: ansible-hub-ui
           ref: ${{ inputs.galaxy_ng_version }}
 
-      - uses: actions/setup-python@v2
+      - uses: actions/setup-python@v4
         with:
-          python-version: "3.8"
+          python-version: "3.10"
 
       - name: Update apt
         run: sudo apt -y update
