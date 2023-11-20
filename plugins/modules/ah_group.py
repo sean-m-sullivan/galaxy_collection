@@ -36,7 +36,6 @@ options:
     default: present
     choices: [absent, present]
 seealso:
-  - module: galaxy.galaxy.ah_group_perm
   - module: galaxy.galaxy.ah_user
 notes:
   - Supports C(check_mode).
@@ -82,15 +81,10 @@ def main():
     state = module.params.get("state")
     # Authenticate
     module.authenticate()
-    vers = module.get_server_version()
 
-    # Use Pulp with newer versions
-    if vers > "4.7.0":
-        group = AHPulpGroups(module)
-        group.get_object(name)
-    else:
-        group = AHUIGroup(module)
-        group.get_object(name, vers)
+    group = AHPulpGroups(module)
+    group.get_object(name)
+
     # Removing the group
     if state == "absent":
         group.delete()

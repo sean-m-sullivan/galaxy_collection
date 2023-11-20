@@ -617,343 +617,6 @@ class AHUIGroup(AHUIObject):
         self.name_field = "name"
         self.perms = []
 
-    def load_perms(self):
-        """Retrieve the group permissions."""
-        if not self.exists:
-            self.perms = []
-            return
-
-        url = self.api.build_ui_url(AHUIGroupPerm.perm_endpoint(self.id), query_params={"limit": 100})
-        try:
-            response = self.api.make_request("GET", url)
-        except AHAPIModuleError as e:
-            self.api.fail_json(msg="Getting permissions error: {error}".format(error=e))
-
-        if response["status_code"] != 200:
-            error_msg = self.api.extract_error_msg(response)
-            if error_msg:
-                fail_msg = "Unable to get permissions for {object_type} {name}: {code}: {error}".format(
-                    object_type=self.object_type,
-                    name=self.name,
-                    code=response["status_code"],
-                    error=error_msg,
-                )
-            else:
-                fail_msg = "Unable to get permissions for {object_type} {name}: {code}".format(
-                    object_type=self.object_type,
-                    name=self.name,
-                    code=response["status_code"],
-                )
-            self.api.fail_json(msg=fail_msg)
-
-        if "meta" not in response["json"] or "count" not in response["json"]["meta"] or "data" not in response["json"]:
-            self.api.fail_json(
-                msg="Unable to get permissions for {object_type} {name}: the endpoint did not provide count and results".format(
-                    object_type=self.object_type, name=self.name
-                )
-            )
-
-        self.perms = []
-        if response["json"]["meta"]["count"] == 0:
-            return
-        for r in response["json"]["data"]:
-            self.perms.append(AHUIGroupPerm(self.api, self.id, r))
-
-    def get_perms(self):
-        """Return the permissions associated with the group.
-
-        :return: The list of permission names.
-        :rtype: list
-        """
-        return [p.name for p in self.perms]
-
-    def delete_perms(self, perms_to_delete):
-        """Remove permissions from the group.
-
-        The method exits the module.
-
-        :param perms_to_delete: List of the permission names to remove from the
-                                group.
-        :type perms_to_delete: list
-        """
-        if perms_to_delete is not None and len(perms_to_delete) > 0:
-            for perm_name in perms_to_delete:
-                for perm in self.perms:
-                    if perm.is_perm(perm_name):
-                        perm.delete(auto_exit=False)
-                        break
-            self.api.exit_json(changed=True)
-        self.api.exit_json(changed=False)
-
-    def create_perms(self, perms_to_create):
-        """Add a permission to the group.
-
-        The method exits the module.
-
-        :param perms_to_create: List of the permission names to add to the
-                                group.
-        :type perms_to_delete: list
-        """
-        if perms_to_create is not None and len(perms_to_create) > 0:
-            for perm_name in perms_to_create:
-                perm = AHUIGroupPerm(self.api, self.id)
-                perm.create({"permission": perm_name}, auto_exit=False)
-            self.api.exit_json(changed=True)
-        self.api.exit_json(changed=False)
-
-
-class AHUIGroupPerm(AHUIObject):
-    """Manage the Ansible Automation Hub UI group permissions API.
-
-    Listing permissions for the group ID 8:
-        ``GET /api/galaxy/_ui/v1/groups/8/model-permissions/?limit=100`` ::
-
-            {
-              "meta": {
-                "count": 2
-              },
-              "links": {
-                "first": "/api/galaxy/_ui/v1/groups/8/model-permissions/?limit=100&offset=0",
-                "previous": null,
-                "next": null,
-                "last": "/api/galaxy/_ui/v1/groups/8/model-permissions/?limit=100&offset=0"
-              },
-              "data": [
-                {
-                  "pulp_href": "/pulp/api/v3/groups/8/model_permissions/37/",
-                  "id": 37,
-                  "permission": "ansible.modify_ansible_repo_content",
-                  "obj": null
-                },
-                {
-                  "pulp_href": "/pulp/api/v3/groups/8/model_permissions/6/",
-                  "id": 6,
-                  "permission": "ansible.change_collectionremote",
-                  "obj": null
-                }
-              ]
-            }
-
-    Removing a permission from a group:
-        ``DELETE /api/galaxy/_ui/v1/groups/8/model-permissions/37/``
-
-    Adding a permission to a group:
-        ``POST /api/galaxy/_ui/v1/groups/8/model-permissions/``
-    """
-
-    @staticmethod
-    def perm_endpoint(group_id):
-        """Return the endpoint for permissions for the given group."""
-        return "groups/{id}/model-permissions".format(id=group_id)
-
-    def __init__(self, API_object, group_id, data=None):
-        """Initialize the object."""
-        super(AHUIGroupPerm, self).__init__(API_object, data)
-        self.endpoint = AHUIGroupPerm.perm_endpoint(group_id)
-        self.object_type = "permissions"
-        self.name_field = "permission"
-
-    @property
-    def id_endpoint(self):
-        """Return the object's endpoint."""
-        id = self.id
-        if id is None:
-            return self.endpoint
-        return "{endpoint}/{id}".format(endpoint=self.endpoint, id=id)
-
-    def is_perm(self, perm_name):
-        """Tell if the given permission name is the name of the current permission."""
-        return self.name == perm_name
-
-
-class AHUIEENamespace(AHUIObject):
-    """Manage the private automation hub execution environment namespaces.
-
-    Execution Environment namespaces are managed through the Pulp API for
-    creation and deletion, and through the UI API for assigning groups and
-    permission.
-    Although the UI API and the web UI cannot create nor delete namespaces, the
-    module provides that feature.
-    Normally, a namespace is automatically created when an image is pushed by
-    using ``podman push``.
-
-    The :py:class:``AHUIEENamespace`` manages the namespace through the UI API.
-    It is used to manage groups and permissions associated with namespaces.
-    See :py:class:``AHPulpEENamespace`` to create and delete namespaces.
-
-    Getting the details of a namespace:
-        ``GET /api/galaxy/_ui/v1/execution-environments/namespaces/<name>/`` ::
-
-            {
-              "name": "ansible-automation-platform-20-early-access",
-              "my_permissions": [
-                "container.add_containernamespace",
-                "container.change_containernamespace",
-                "container.delete_containernamespace",
-                "container.namespace_add_containerdistribution",
-                "container.namespace_change_containerdistribution",
-                "container.namespace_delete_containerdistribution",
-                "container.namespace_modify_content_containerpushrepository",
-                "container.namespace_pull_containerdistribution",
-                "container.namespace_push_containerdistribution",
-                "container.namespace_view_containerdistribution",
-                "container.namespace_view_containerpushrepository",
-                "container.view_containernamespace"
-              ],
-              "owners": [
-                "admin"
-              ],
-              "groups": [
-                {
-                  "id": 50,
-                  "name": "operators",
-                  "object_roles": [
-                    "namespace_add_containerdistribution"
-                  ]
-                }
-              ]
-            }
-
-    Updating the groups and permissions:
-        ``PUT /api/galaxy/_ui/v1/execution-environments/namespaces/<name>/`` ::
-
-            data:
-            {
-              "groups":[
-                {
-                 "id":50,
-                 "name":"operators",
-                 "object_roles": [
-                   "namespace_add_containerdistribution"
-                 ]
-                }
-              ]
-            }
-    """
-
-    def __init__(self, API_object, data=None):
-        """Initialize the object."""
-        super(AHUIEENamespace, self).__init__(API_object, data)
-        self.endpoint = "execution-environments/namespaces"
-        self.object_type = "namespace"
-        self.name_field = "name"
-
-    @property
-    def id_endpoint(self):
-        """Return the object's endpoint."""
-        name = self.name
-        if name is None:
-            return self.endpoint
-        return "{endpoint}/{name}".format(endpoint=self.endpoint, name=name)
-
-    def groups_are_different(self, old, new):
-        """Compare two dictionaries.
-
-        :param old: The current groups and permissions.
-        :type old: dict
-        :param new: The new groups and permissions.
-        :type new: dict
-
-        :return: ``True`` if the two sets are different, ``False`` otherwise.
-        :rtype: bool
-        """
-        for n in new:
-            for o in old:
-                if o["id"] == n["id"]:
-                    if ("object_roles" in o and set(o["object_roles"]) != set(n["object_roles"])) or \
-                            ("object_permissions" in o and set(o["object_permissions"]) != set(n["object_permissions"])):
-                        return True
-                    break
-            else:
-                if ("object_roles" in n and len(n["object_roles"])) or ("object_permissions" in n and len(n["object_permissions"])):
-                    return True
-        return False
-
-    def update_groups(self, new_item, auto_exit=True, exit_on_error=True):
-        """Update the existing object in private automation hub.
-
-        :param new_item: The data to pass to the API call. This provides the
-                         object details (``{"groups": ...}``)
-        :type new_item: dict
-        :param auto_exit: Exit the module when the API call is done.
-        :type auto_exit: bool
-        :param exit_on_error: If ``True`` (the default), exit the module on API
-                              error. Otherwise, raise the
-                              :py:class:``AHAPIModuleError`` exception.
-        :type exit_on_error: bool
-
-        :raises AHAPIModuleError: An API error occured. That exception is only
-                                  raised when ``exit_on_error`` is ``False``.
-
-        :return: Do not return if ``auto_exit`` is ``True``. Otherwise, return
-                 ``True`` if object has been updated (change state) or ``False``
-                 if the object do not need updating.
-        :rtype: bool
-        """
-
-        # Check to see if anything within the item requires the item to be
-        # updated.
-        needs_patch = self.groups_are_different(self.data["groups"], new_item["groups"])
-
-        if not needs_patch:
-            if auto_exit:
-                json_output = {
-                    "name": self.name,
-                    "type": self.object_type,
-                    "changed": False,
-                }
-                self.api.exit_json(**json_output)
-            return False
-
-        if self.api.check_mode:
-            self.data["groups"].new_item
-            if auto_exit:
-                json_output = {
-                    "name": self.name,
-                    "type": self.object_type,
-                    "changed": True,
-                }
-                self.api.exit_json(**json_output)
-            return True
-
-        url = self.api.build_ui_url(self.id_endpoint)
-        try:
-            response = self.api.make_request("PUT", url, data=new_item)
-        except AHAPIModuleError as e:
-            if exit_on_error:
-                self.api.fail_json(msg="Updating groups error: {error}".format(error=e))
-            else:
-                raise
-
-        if response["status_code"] == 200:
-            self.exists = True
-            self.data = response["json"]
-            # Make sure the object name is available in the response
-            if self.name_field not in self.data:
-                self.data[self.name_field] = new_item[self.name_field]
-            if auto_exit:
-                json_output = {
-                    "name": self.name,
-                    "type": self.object_type,
-                    "changed": True,
-                }
-                self.api.exit_json(**json_output)
-            return True
-
-        error_msg = self.api.extract_error_msg(response)
-        if error_msg:
-            fail_msg = "Unable to update {object_type} {name}: {error}".format(object_type=self.object_type, name=self.name, error=error_msg)
-        else:
-            fail_msg = "Unable to update {object_type} {name}: {code}".format(
-                object_type=self.object_type,
-                name=self.name,
-                code=response["status_code"],
-            )
-        if exit_on_error:
-            self.api.fail_json(msg=fail_msg)
-        else:
-            raise AHAPIModuleError(fail_msg)
-
 
 class AHUIEERemote(AHUIObject):
     def __init__(self, API_object, data=None):
@@ -1069,11 +732,7 @@ class AHUIEERepository(AHUIObject):
                                   raised when ``exit_on_error`` is ``False``.
         """
         query = {self.name_field: name, "limit": "1000"}
-        self.vers = vers
-        if vers < "4.7":
-            url = self.api.build_ui_url(self.endpoint, query_params=query)
-        else:
-            url = self.api.build_plugin_url(self.endpoint, query_params=query)
+        url = self.api.build_plugin_url(self.endpoint, query_params=query)
 
         try:
             response = self.api.make_request("GET", url)
@@ -1158,10 +817,7 @@ class AHUIEERepository(AHUIObject):
         :rtype: bool
         """
 
-        if self.vers < "4.7":
-            url = self.api.build_ui_url("{endpoint}/_content/sync".format(endpoint=self.id_endpoint))
-        else:
-            url = self.api.build_plugin_url("{endpoint}/_content/sync".format(endpoint=self.id_endpoint))
+        url = self.api.build_plugin_url("{endpoint}/_content/sync".format(endpoint=self.id_endpoint))
         try:
             response = self.api.make_request("POST", url, wait_for_task=False)
         except AHAPIModuleError as e:
@@ -1230,10 +886,7 @@ class AHUIEERepository(AHUIObject):
         if not self.exists:
             return ""
 
-        if self.vers < "4.7":
-            url = self.api.build_ui_url("{endpoint}/_content/readme".format(endpoint=self.id_endpoint))
-        else:
-            url = self.api.build_plugin_url("{endpoint}/_content/readme".format(endpoint=self.id_endpoint))
+        url = self.api.build_plugin_url("{endpoint}/_content/readme".format(endpoint=self.id_endpoint))
         try:
             response = self.api.make_request("GET", url)
         except AHAPIModuleError as e:
@@ -1289,10 +942,7 @@ class AHUIEERepository(AHUIObject):
                 self.api.exit_json(**json_output)
             return True
 
-        if self.vers < "4.7":
-            url = self.api.build_ui_url("{endpoint}/_content/readme".format(endpoint=self.id_endpoint))
-        else:
-            url = self.api.build_plugin_url("{endpoint}/_content/readme".format(endpoint=self.id_endpoint))
+        url = self.api.build_plugin_url("{endpoint}/_content/readme".format(endpoint=self.id_endpoint))
         try:
             response = self.api.make_request("PUT", url, data={"text": readme})
         except AHAPIModuleError as e:
@@ -1578,11 +1228,7 @@ class AHUIEEImage(AHUIObject):
         """
         self.image_name = name
         self.tag = tag
-        self.vers = vers
-        if vers < "4.7":
-            url = self.api.build_ui_url(self.id_endpoint, query_params={"limit": 1000})
-        else:
-            url = self.api.build_plugin_url(self.id_endpoint, query_params={"limit": 1000})
+        url = self.api.build_plugin_url(self.id_endpoint, query_params={"limit": 1000})
         try:
             response = self.api.make_request("GET", url)
         except AHAPIModuleError as e:

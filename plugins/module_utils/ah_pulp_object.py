@@ -413,43 +413,6 @@ class AHPulpRolePerm(AHPulpObject):
         self.perms = []
 
 
-class AHPulpEENamespace(AHPulpObject):
-    """Manage the execution environment namespace with the Pulp API.
-
-    The :py:class:``AHPulpEENamespace`` creates and deletes namespaces.
-    See :py:class:``AHUIEENamespace`` to manage groups and permissions.
-
-    Getting the details of a namespace:
-        ``GET /pulp/api/v3/pulp_container/namespaces/?name=<name>`` ::
-
-            {
-              "count": 1,
-              "next": null,
-              "previous": null,
-              "results": [
-                {
-                  "pulp_href": "/pulp/api/v3/pulp_container/namespaces/dd54d0df-cd88-420b-922a-43a0725a20fc/",
-                  "pulp_created": "2021-08-17T14:19:29.217506Z",
-                  "name": "namespace1"
-                }
-              ]
-            }
-
-    Create a namespace:
-        ``POST /pulp/api/v3/pulp_container/namespaces/``
-
-    Delete a namespace:
-        ``DELETE /pulp/api/v3/pulp_container/namespaces/dd54d0df-cd88-420b-922a-43a0725a20fc/``
-    """
-
-    def __init__(self, API_object, data=None):
-        """Initialize the object."""
-        super(AHPulpEENamespace, self).__init__(API_object, data)
-        self.endpoint = "pulp_container/namespaces"
-        self.object_type = "namespace"
-        self.name_field = "name"
-
-
 class AHPulpEERemote(AHPulpObject):
     """Manage the execution environment repository with the Pulp API.
 
@@ -503,7 +466,7 @@ class AHPulpEERepository(AHPulpObject):
     A repository (or container for Pulp) represents a container image and is
     stored inside a namespace.
 
-    The :py:class:``AHPulpEENamespace`` creates, deletes, and set a description
+    The :py:class:``AHPulpEERepository`` creates, deletes, and set a description
     to repositories.
     Although the class can be used to create a repository, the recommended
     method is to push an image, with C(podman push) for example.

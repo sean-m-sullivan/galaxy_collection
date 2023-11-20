@@ -72,7 +72,6 @@ options:
     default: present
     choices: [absent, present]
 seealso:
-  - module: galaxy.galaxy.ah_group_perm
   - module: galaxy.galaxy.ah_group
 notes:
   - Supports C(check_mode).

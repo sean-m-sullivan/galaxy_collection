@@ -50,23 +50,8 @@ This also speeds up the overall role.
 |Variable Name|Default Value|Required|Type|Description|
 |:---:|:---:|:---:|:---:|:---:|
 |`name`|""|yes|str|Group Name. Must be lower case containing only alphanumeric characters and underscores.|
-|`perms`|""|yes|str|The list of permissions to add to or remove from the given group. See below for options.|
 |`state`|`present`|no|str|Desired state of the group.|
 <!-- |`new_name`|""|yes|str|Setting this option will change the existing name (looked up via the name field.| -->
-#### perms
-
-The module accepts the following roles:
-
-- For user management, `add_user`, `change_user`, `delete_user`, and `view_user`.
-- For group management, `add_group`, `change_group`, `delete_group`, and `view_group`.
-- For collection namespace management, `add_namespace`, `change_namespace`, `upload_to_namespace`, and `delete_namespace`.
-- For collection content management, `modify_ansible_repo_content`, and `delete_collection`.
-- For remote repository configuration, `change_collectionremote` and `view_collectionremote`.
-- For container image management, only with private automation hub v4.3.2
-  or later, `change_containernamespace_perms`, `change_container`,
-  `change_image_tag`, `create_container`, `push_container`, and `delete_containerrepository`.
-- For task management, `change_task`, `view_task`, and `delete_task`.
-- You can also grant or revoke all permissions with `*` or `all`.
 
 ### Standard Project Data Structure
 

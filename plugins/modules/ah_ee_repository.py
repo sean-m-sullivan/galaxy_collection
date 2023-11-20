@@ -131,24 +131,7 @@ import os.path
 
 from ..module_utils.ah_api_module import AHAPIModule
 from ..module_utils.ah_ui_object import AHUIEERepository, AHUIEERegistry, AHUIEERemote
-from ..module_utils.ah_pulp_object import AHPulpEERepository, AHPulpEENamespace
-
-
-def delete_empty_namespace(module, repository_name):
-    """Delete the namespace of the given repository name.
-
-    :param module: The API object that the function uses to access the API.
-    :type module: :py:class:``ah_api_module.AHAPIModule``
-    :param repository_name: Name of the repository for which the namespace must
-                            be deleted if empty.
-    :type repository_name: str
-    """
-    namespace_name = repository_name.split("/", 1)[0]
-    repos = AHPulpEERepository.get_repositories_in_namespace(module, namespace_name)
-    if len(repos) == 0:
-        namespace_pulp = AHPulpEENamespace(module)
-        namespace_pulp.get_object(namespace_name)
-        namespace_pulp.delete(auto_exit=False)
+from ..module_utils.ah_pulp_object import AHPulpEERepository
 
 
 def main():
@@ -187,12 +170,6 @@ def main():
 
     # Only recent versions support execution environment
     vers = module.get_server_version()
-    if vers < "4.3.2":
-        module.fail_json(msg="This module requires private automation hub version 4.3.2 or later. Your version is {vers}".format(vers=vers))
-    elif vers < "4.4.0" and registry:
-        module.fail_json(
-            msg="This module requires private automation hub version 4.4.0 or later to create remote repositories. Your version is {vers}".format(vers=vers)
-        )
 
     # Process the object from the Pulp API (delete or create)
     repository_pulp = AHPulpEERepository(module)
@@ -236,17 +213,13 @@ def main():
             new_fields[field_name] = field_val
 
         remote = AHUIEERemote(module)
-        if vers > "4.7.0":
-            new_fields["registry"] = registry_obj.data['id']
-            remote.name_field = "id"
-            registry_obj.id_field = "id"
-        else:
-            new_fields["registry"] = registry_obj.id
+        new_fields["registry"] = registry_obj.data['id']
+        remote.name_field = "id"
+        registry_obj.id_field = "id"
+
         if repository_ui.exists:
-            if vers > "4.7.0":
-                remote.get_object(repository_ui.data["pulp"]["repository"]["remote"]["id"], vers)
-            else:
-                remote.get_object(repository_ui.data["pulp"]["repository"]["remote"]["pulp_id"], vers)
+            remote.get_object(repository_ui.data["pulp"]["repository"]["remote"]["id"], vers)
+
         new_fields["name"] = name
         remote_changed = remote.create_or_update(new_fields, auto_exit=False)
         changed = changed or remote_changed
