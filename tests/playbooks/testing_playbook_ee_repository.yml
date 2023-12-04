@@ -7,15 +7,15 @@
   collections:
     - galaxy.galaxy
   vars:
-    hub_host: localhost:5001
-    ah_hostname: http://localhost:8002/
-    ah_username: admin
-    ah_password: admin
-    ah_path_prefix: 'automation-hub'
+    hub_host: "{% if galaxy_ng_version == 'stable-4.7' %}localhost:5001{% else %}localhost:55001{% endif %}"
+    ah_hostname: "{% if galaxy_ng_version == 'stable-4.7' %}http://localhost:8002/{% else %}http://localhost:8002/{% endif %}"
+    ah_username: "{% if galaxy_ng_version == 'stable-4.7' %}iqe_admin{% else %}admin{% endif %}"
+    ah_password: "{% if galaxy_ng_version == 'stable-4.7' %}redhat{% else %}admin{% endif %}"
+    ah_path_prefix: "{% if galaxy_ng_version == 'stable-4.7' %}automation-hub{% else %}galaxy{% endif %}"
     ah_validate_certs: false
-    repository: test-namespace/ee-minimal-rhel8
+    repository: redhat_cop/config_as_code_ee
     tag: latest
-    fake_image: quay.io/ansible/http-test-container:2.0.0
+    fake_image: quay.io/redhat_cop/config_as_code_ee:latest
   pre_tasks:
     - name: Include vars from ah_configs directory
       ansible.builtin.include_vars:
@@ -31,6 +31,19 @@
     # - Deleting the images from the local system
     # The tasks do not use the podman collection because it may not be
     # available on the testing system.
+
+    - name: hub_host
+      ansible.builtin.debug:
+        var: hub_host
+
+    - name: ah_hostname
+      ansible.builtin.debug:
+        var: ah_hostname
+
+    - name: ah_path_prefix
+      ansible.builtin.debug:
+        var: ah_path_prefix
+
     - name: Ensure a small container image is available
       ansible.builtin.command:
         cmd: "podman pull {{ fake_image }}"
@@ -91,7 +104,7 @@
       vars:
         ah_ee_images:
           # Testing adding tags to the image
-          - name: "test-namespace/ee-minimal-rhel8:latest"
+          - name: "redhat_cop/config_as_code_ee:latest"
             tags:
               - v2
               - "2.0"
@@ -102,7 +115,7 @@
       vars:
         ah_ee_images:
           # Testing adding tags to the image
-          - name: "test-namespace/ee-minimal-rhel8:latest"
+          - name: "redhat_cop/config_as_code_ee:latest"
             append: false
             tags:
               - prod2
@@ -114,7 +127,7 @@
       vars:
         ah_ee_images:
           # Testing adding tags to the image
-          - name: "test-namespace/ee-minimal-rhel8:prod2"
+          - name: "redhat_cop/config_as_code_ee:prod2"
             state: present
             append: false
             tags: latest
@@ -125,7 +138,7 @@
       vars:
         ah_ee_images:
           # Testing adding tags to the image
-          - name: "test-namespace/ee-minimal-rhel8:latest"
+          - name: "redhat_cop/config_as_code_ee:latest"
             state: absent
 
     # Testing repository deletion
@@ -136,7 +149,7 @@
         ah_ee_repositories:
           - name: config_as_code_ee
             state: absent
-          - name: test-namespace/ee-minimal-rhel8
+          - name: redhat_cop/config_as_code_ee
             state: absent
 
     - name: Ensure the temporary file is removed

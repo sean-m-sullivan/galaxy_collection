@@ -1,18 +1,14 @@
 ---
 name: Test roles and modules
-on: never #[push, pull_request_target]
+on: [push, pull_request_target]
 
 jobs:
-  ci_standalone:
+  ci_standalone_47:
     strategy:
       fail-fast: false
       matrix:
         galaxy_ng_version:
-          - stable-4.4
-          - stable-4.5
-          - stable-4.6
           - stable-4.7
-          - master
     uses: "./.github/workflows/ci_standalone_versioned.yml"
     with:
       galaxy_ng_version: ${{ matrix.galaxy_ng_version }}
@@ -20,3 +16,19 @@ jobs:
     secrets:
       redhat_catalog_username: ${{ secrets.REDHAT_CATALOG_USERNAME }}
       redhat_catalog_password: ${{ secrets.REDHAT_CATALOG_PASSWORD }}
+  ci_standalone:
+    strategy:
+      fail-fast: false
+      matrix:
+        galaxy_ng_version:
+          - stable-4.8
+          - stable-4.9
+          - master
+    uses: "./.github/workflows/ci_oci_versioned.yml"
+    with:
+      galaxy_ng_version: ${{ matrix.galaxy_ng_version }}
+      gh_ref: ${{ github.event.pull_request.head.sha || github.sha }}
+    secrets:
+      redhat_catalog_username: ${{ secrets.REDHAT_CATALOG_USERNAME }}
+      redhat_catalog_password: ${{ secrets.REDHAT_CATALOG_PASSWORD }}
+...

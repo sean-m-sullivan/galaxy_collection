@@ -106,6 +106,7 @@ EXAMPLES = """
 
 from ..module_utils.ah_module import AHModule
 import pathlib
+import time
 
 
 def main():
@@ -174,6 +175,7 @@ def main():
             # Delete collection
             module.json_output["task"] = module.delete_endpoint(existing_item["json"]["href"])["json"]["task"]
             module.json_output["deleted"] = True
+            time.sleep(1)
             # Upload new collection
             module.upload(path, "artifacts/collections", wait, item_type="collections")
             module.json_output["changed"] = True

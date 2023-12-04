@@ -19,6 +19,18 @@
         state: directory
         mode: '0755'
 
+    - name: Ah_password
+      ansible.builtin.debug:
+        var: ah_password
+
+    - name: Ah_hostname
+      ansible.builtin.debug:
+        var: ah_hostname
+
+    - name: Ah_path_prefix
+      ansible.builtin.debug:
+        var: ah_path_prefix
+
   tasks:
     - name: Authenticate and get an API token
       ah_token:
@@ -91,13 +103,13 @@
 
     - name: Download Tower tarball
       ansible.builtin.get_url:
-        url: https://galaxy.ansible.com/download/infra-controller_configuration-2.4.0.tar.gz
-        dest: "{{ playbook_dir }}/infra-controller_configuration-2.4.0.tar.gz"
+        url: https://galaxy.ansible.com/download/infra-controller_configuration-2.6.0.tar.gz
+        dest: "{{ playbook_dir }}/infra-controller_configuration-2.6.0.tar.gz"
         mode: '0440'
 
     - name: Upload Tower collection to automation hub
       ah_collection_upload:
-        path: "{{ playbook_dir }}/infra-controller_configuration-2.4.0.tar.gz"
+        path: "{{ playbook_dir }}/infra-controller_configuration-2.6.0.tar.gz"
         wait: true
         ah_host: "{{ ah_hostname }}"
         ah_token: "{{ ah_token }}"
