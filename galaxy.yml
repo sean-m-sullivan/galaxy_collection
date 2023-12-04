@@ -28,4 +28,10 @@ build_ignore:
   - template_galaxy.yml
   - '*.tar.gz'
   - test
+  - .flake8
+  - .ansible-lint
+  - .markdownlint.yml
+  - .pre-commit-config.yaml
+  - .yamllint.yml
+  - STANDARDS.md
 ...
