@@ -1,0 +1,66 @@
+---
+name: OCI Env Integration OG
+on:
+  pull_request:
+    branches:
+      - '113**'
+  push:
+    branches:
+      - '1232**'
+  workflow_dispatch:
+
+jobs:
+  integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - TEST_PROFILE: standalone
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ansible/galaxy_ng
+
+      - name: ls
+        run: ls -l
+
+      - name: tree
+        run: tree
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      # Note: COMPOSE_INTERACTIVE_NO_CLI=1 is required for oci-env to work correctly when there's no interactive terminal
+      - name: Set environment variables
+        run: |
+          echo "OCI_ENV_PATH=${HOME}/work/galaxy_ng/oci_env" >> $GITHUB_ENV
+          echo "COMPOSE_INTERACTIVE_NO_CLI=1" >> $GITHUB_ENV
+          echo "OCI_VERBOSE=1" >> $GITHUB_ENV
+          echo "GH_DUMP_LOGS=1" >> $GITHUB_ENV
+
+      - name: Update apt
+        run: sudo apt -y update
+
+      - name: Install LDAP requirements
+        run: sudo apt-get install -y libsasl2-dev python3 libldap2-dev libssl-dev build-essential
+
+      - name: setup oci-env
+        run: |
+          git clone https://github.com/pulp/oci_env.git $OCI_ENV_PATH
+          pip install -e $OCI_ENV_PATH/client/
+          mkdir $OCI_ENV_PATH/db_backup/
+
+      - name: pwd
+        run: pwd
+
+      - name: ls
+        run: ls -l
+
+      - name: tree
+        run: tree
+
+      - name: run integration tests
+        run: make gh-action/${{ matrix.env.TEST_PROFILE }}

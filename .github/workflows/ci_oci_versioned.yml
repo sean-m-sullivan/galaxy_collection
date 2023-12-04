@@ -1,0 +1,146 @@
+
+---
+name: Test roles and modules with galaxy_ng on oci-env
+
+on:
+  workflow_call:
+    inputs:
+      galaxy_ng_version:
+        description: The version to pull of galaxy_ng
+        required: true
+        type: string
+      gh_ref:
+        description: The ref in the repository to pull
+        required: false
+        default: devel
+        type: string
+    secrets:
+      redhat_catalog_username:
+        description: Username for Red Hat Catalog
+        required: true
+      redhat_catalog_password:
+        description: Password for Red Hat Catalog
+        required: true
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.gh_ref }}
+          path: galaxy_collection
+
+      - name: Checkout galaxy_ng
+        uses: actions/checkout@v4
+        with:
+          repository: ansible/galaxy_ng
+          path: galaxy_ng
+          ref: ${{ inputs.galaxy_ng_version }}
+
+      - name: Checkout ansible-hub-ui
+        uses: actions/checkout@v4
+        with:
+          repository: ansible/ansible-hub-ui
+          path: ansible-hub-ui
+          ref: ${{ inputs.galaxy_ng_version }}
+
+      - name: Checkout oci_env
+        uses: actions/checkout@v4
+        with:
+          repository: pulp/oci_env
+          path: oci_env
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: setup oci-env
+        run: |
+          pip install -e client
+        working-directory: oci_env
+
+      - name: setup node
+        run: |
+          wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
+          npm install 18
+
+      # Note: COMPOSE_INTERACTIVE_NO_CLI=1 is required for oci-env to work correctly when there's no interactive terminal
+      - name: Set environment variables
+        run: |
+          export OCI_ENV_PATH=$(dirname $(pip show oci-env | grep -e ^Location | awk '{print $2}'))
+          export COMPOSE_BINARY=docker
+          echo "COMPOSE_INTERACTIVE_NO_CLI=1" >> $GITHUB_ENV
+          echo "OCI_VERBOSE=1" >> $GITHUB_ENV
+          echo "GH_DUMP_LOGS=1" >> $GITHUB_ENV
+      - name: Update apt
+        run: sudo apt -y update
+
+      - name: Install LDAP requirements
+        run: sudo apt-get install -y libsasl2-dev python3 libldap2-dev libssl-dev build-essential
+
+      - name: ls
+        run: pwd
+
+      - name: tree
+        run: tree
+
+      # - name: Create and populate galaxy_ng/.compose.env file
+
+      #   run: |
+      #     cat <<EOF > galaxy_ng/.compose.env
+      #     COMPOSE_PROFILE=galaxy_ng/base
+      #     DEV_SOURCE_PATH='galaxy_ng'
+      #     LOCK_REQUIREMENTS=1
+      #     WITH_DEV_INSTALL=1
+      #     WAIT_FOR_MIGRATIONS=1
+      #     ENABLE_SIGNING=1
+      #     EOF
+
+      #     echo "cat galaxy_ng/.compose.env"
+      #     cat galaxy_ng/.compose.env
+
+      - name: build stack
+        working-directory: galaxy_ng
+        run: |
+          env_path=dev/oci_env_integration/oci_env_configs/standalone.compose.env
+          oci-env -e ${env_path} compose build --progress=plain
+          oci-env -e ${env_path} compose up -d
+
+      - name: show ports
+        working-directory: galaxy_ng
+        run: |
+          sudo apt install net-tools -y
+          sudo netstat -ntlp
+
+      - name: setup hub-ui
+        run: |
+          npm install
+          npm run start-community
+        working-directory: ansible-hub-ui
+
+      - name: install collection
+        run: ansible-galaxy collection install .
+        working-directory: galaxy_collection
+
+      - name: "Perform playbook collection tests"
+        run: ansible-playbook tests/playbooks/testing_collections_playbook.yml -v -e galaxy_ng_version=${{ inputs.galaxy_ng_version }} -e git_repo_name=${{ github.event.repository.name }} -vvv
+        working-directory: galaxy_collection
+
+      - name: "Perform collection repository tests"
+        run: ansible-playbook tests/playbooks/testing_collections_repos.yml -v -e galaxy_ng_version=${{ inputs.galaxy_ng_version }}
+        working-directory: galaxy_collection
+
+      - name: "Perform playbook namespace tests"
+        run: ansible-playbook tests/playbooks/testing_playbook_ee_namespace.yml -v -e galaxy_ng_version=${{ inputs.galaxy_ng_version }}
+        if: ${{ inputs.galaxy_ng_version == 'stable-4.4' || inputs.galaxy_ng_version == 'stable-4.5'  }}  # ee_namespace APIs were removed in 4.6 (see #183)
+        working-directory: galaxy_collection
+
+      - name: "Perform playbook repository tests"
+        run: ansible-playbook tests/playbooks/testing_playbook_ee_repository.yml -vv -e galaxy_ng_version=${{ inputs.galaxy_ng_version }} -e redhat_catalog_username=${{ secrets.redhat_catalog_username }} -e redhat_catalog_password=${{ secrets.redhat_catalog_password }}
+        working-directory: galaxy_collection
+
+      - name: "Perform playbook user and group management tests"
+        run: ansible-playbook tests/playbooks/testing_playbook_user.yml -v -e galaxy_ng_version=${{ inputs.galaxy_ng_version }}
+        working-directory: galaxy_collection
+...
