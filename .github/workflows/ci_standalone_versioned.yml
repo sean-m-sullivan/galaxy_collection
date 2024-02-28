@@ -96,13 +96,7 @@ jobs:
         run: mv .github/files/ansible.cfg .
 
       - name: Build and install the collection
-        id: build
-        uses: redhat-cop/ansible_collections_tooling/actions/build_ansible_collection@main
-        with:
-          collection_namespace: galaxy
-          collection_name: galaxy
-          collection_version: 1.0.0
-          collection_repo: https://github.com/ansible/galaxy_collection
+        run: ansible-galaxy collection install . -f
 
       - name: "Perform playbook collection tests"
         run: ansible-playbook tests/playbooks/testing_collections_playbook.yml -v -e galaxy_ng_version=${{ inputs.galaxy_ng_version }} -e git_repo_name=${{ github.event.repository.name }}
