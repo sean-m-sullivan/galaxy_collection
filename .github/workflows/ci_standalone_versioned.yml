@@ -80,19 +80,7 @@ jobs:
 
       - name: build stack
         working-directory: galaxy_ng
-        run: make docker/build
-
-      - name: run migrations
-        working-directory: galaxy_ng
-        run: make docker/migrate
-
-      - name: load translations
-        working-directory: galaxy_ng
-        run: make docker/translations
-
-      - name: load loaddata
-        working-directory: galaxy_ng
-        run: make docker/loaddata
+        run: make docker/all
 
       - name: start the compose stack
         working-directory: galaxy_ng
