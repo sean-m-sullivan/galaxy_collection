@@ -89,14 +89,18 @@ jobs:
         working-directory: galaxy_ng
         run: ./compose up -d
 
-      - name: give stack some time to spin up
-        run: sleep 240
 
       - name: Move ansible.cfg to root
         run: mv .github/files/ansible.cfg .
 
-      - name: Build and install the collection
+      - name: Build the collection
+        run: ansible-galaxy collection build . -f
+
+      - name: Install the collection
         run: ansible-galaxy collection install . -f
+
+      - name: give stack some time to spin up
+        run: sleep 240
 
       - name: "Perform playbook collection tests"
         run: ansible-playbook tests/playbooks/testing_collections_playbook.yml -v -e galaxy_ng_version=${{ inputs.galaxy_ng_version }} -e git_repo_name=${{ github.event.repository.name }}
