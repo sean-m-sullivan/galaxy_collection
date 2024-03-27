@@ -26,26 +26,36 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-        with:
-          ref: ${{ inputs.gh_ref }}
+      - name: Checkout galaxy_ng
+        uses: actions/checkout@v4
 
-      - name: "Checkout galaxy_ng"
-        uses: actions/checkout@v2
-        with:
-          repository: ansible/galaxy_ng
-          path: galaxy_ng
-          ref: ${{ inputs.galaxy_ng_version }}
-
-      - uses: actions/setup-python@v2
+      - name: Setup python
+        uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      - name: Update apt
-        run: sudo apt -y update
+      - name: install ansible
+        run: pip3 install ansible
+
+      - name: Checkout the galaxy collection
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.gh_ref }}
+          repository: ansible/galaxy_collection
+          path: galaxy_collection
+
+      - name: Build and install the collection
+        working-directory: galaxy_collection
+        run: |
+          # The ansible.cfg defined in the collection repository might break the test. We want the same variables for installation and running.
+          rm -f ansible.cfg
+          rm -f galaxy.yml
+          mv .github/files/galaxy.yml.j2 .
+          ansible all -i localhost, -c local -m template -a "src=galaxy.yml.j2 dest=galaxy.yml" -e collection_namespace=galaxy -e collection_name=galaxy -e collection_version=1.0.0 -e collection_repo=https://github.com/ansible/automation_hub_collection
+          ansible-galaxy collection build -vvv
+          ansible-galaxy collection install galaxy-galaxy-1.0.0.tar.gz -vvv
 
       - name: Spin up a standalone galaxy_ng installation
-        working-directory: galaxy_ng
         run: |
           echo "COMPOSE_PROFILE=standalone" > .compose.env
           echo "DEV_SOURCE_PATH=galaxy_ng" >> .compose.env
@@ -59,15 +69,6 @@ jobs:
 
       - name: Move ansible.cfg to root
         run: mv .github/files/ansible.cfg .
-
-      - name: Build and install the collection
-        id: build
-        uses: redhat-cop/ansible_collections_tooling/actions/build_ansible_collection@main
-        with:
-          collection_namespace: infra
-          collection_name: ah_configuration
-          collection_version: 1.0.0
-          collection_repo: https://github.com/ansible/galaxy_collection
 
       - name: "Perform playbook collection tests"
         run: ansible-playbook tests/playbooks/testing_collections_playbook.yml -v -e galaxy_ng_version=${{ inputs.galaxy_ng_version }} -e git_repo_name=${{ github.event.repository.name }}
