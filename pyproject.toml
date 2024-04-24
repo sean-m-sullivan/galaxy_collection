@@ -1,0 +1,101 @@
+[project]
+name = "galaxy"
+authors = [{ name = "Red Hat, Inc.", email = "info@ansible.com" }]
+description = "Ansible Automation Platform gateway"
+readme = "README.md"
+requires-python = ">=3.9"
+keywords = ["ansible", "django", "gateway"]
+license = { file = "LICENSE" }
+classifiers = [
+  "Framework :: Django",
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Web Environment",
+  "Framework :: Django",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "Operating System :: OS Independent",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+]
+dynamic = ["version", "dependencies"]
+
+
+[tool.black]
+line-length = 160
+fast = true
+skip-string-normalization = true
+force-exclude = '''
+(
+   .*/migrations/
+ | aap-dev/*
+)
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 160
+
+[tool.flake8]
+ignore=E402
+extend-ignore = E203, W503
+exclude = ['aap_gateway_api/migrations/*', '.tox', 'django-ansible-base', 'aap-dev/*']
+# E402: module level import not at top of file. Ansible modules follow a
+# somewhat different convention here because DOCUMENTATION, EXAMPLES, and
+"""
+
+[tool.tox]
+legacy_tox_ini = """
+    [tox]
+    min_version = 4.0
+    no_package = true
+    env_list =
+        check
+        py311
+    labels =
+        test = py311, check
+        lint = flake8, black, isort
+
+    [testenv]
+    allowlist_externals = ./tools/scripts/ci/tox-reinstall-django-ansible-base.sh
+    setenv =
+        PYTHONPATH = {toxinidir}/django-ansible-base/
+    deps =
+        -r{toxinidir}/requirements/requirements.txt
+        -r{toxinidir}/requirements/requirements_git.txt
+        -r{toxinidir}/requirements/requirements_test.txt
+    commands =
+        ./tools/scripts/ci/tox-reinstall-django-ansible-base.sh {envname}
+        pytest -n auto --cov=. --cov-report=xml:coverage.xml --cov-report=html --cov-report=json --cov-branch {env:GATEWAY_TEST_DIRS:aap_gateway_api/tests} {posargs}
+
+    [testenv:check]
+    allowlist_externals = ./tools/scripts/ci/tox-reinstall-django-ansible-base.sh
+    setenv =
+        PYTHONPATH = {toxinidir}:{toxinidir}/django-ansible-base/
+    deps =
+        -r{toxinidir}/requirements/requirements.txt
+        -r{toxinidir}/requirements/requirements_git.txt
+        psycopg[binary]
+    commands =
+        ./tools/scripts/ci/tox-reinstall-django-ansible-base.sh {envname}
+        python3 -m aap_gateway_api check
+
+    [testenv:flake8]
+    deps =
+        flake8
+        Flake8-pyproject
+    commands = flake8 {posargs:.}
+
+    [testenv:black]
+    deps =
+        black
+    commands = black {posargs:.}
+
+    [testenv:isort]
+    deps =
+        isort
+    commands = isort {posargs:.}
+"""
