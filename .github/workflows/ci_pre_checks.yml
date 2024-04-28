@@ -1,0 +1,60 @@
+---
+name: "pre_checks"
+
+concurrency:
+  group: ${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    branches: [devel]
+  workflow_dispatch:
+  push:
+    branches:
+    - '*_'  # ending underscore for trying things
+    - devel
+    tags:
+    - '*_'  # ending underscore for trying things
+    - 'v[0-9]+.[0-9]+.[0-9]+'  # final version
+    - 'v[0-9]+.[0-9]+.[0-9]+[abrc]+[0-9]+'  # alpha, beta, release candidate (rc)
+    - 'v[0-9]+.[0-9]+.[0-9]+.dev[0-9]+'  # development versions
+  schedule:
+    - cron: "0 6 * * *"
+
+jobs:
+  changelog:
+    uses: ansible/ansible-content-actions/.github/workflows/changelog.yaml@main
+    if: github.event_name == 'pull_request'
+  ansible-lint:
+    uses: ansible/ansible-content-actions/.github/workflows/ansible_lint.yaml@main
+  sanity:
+    uses: ansible/ansible-content-actions/.github/workflows/sanity.yaml@main
+  build-import:
+    uses: ansible/ansible-content-actions/.github/workflows/build_import.yaml@main
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - uses: pre-commit/action@v3.0.0
+  all_green:
+    if: ${{ always() }}
+    needs:
+      - changelog
+      - ansible-lint
+      - sanity
+      - build-import
+      - pre-commit
+    runs-on: ubuntu-latest
+    steps:
+      - run: >-
+          python -c "assert 'failure' not in
+          set([
+          '${{ needs.changelog.result }}',
+          '${{ needs.ansible-lint.result }}'
+          '${{ needs.sanity.result }}',
+          '${{ needs.sanity.build-import }}',
+          '${{ needs.pre-commit.result }}',
+          ])"
