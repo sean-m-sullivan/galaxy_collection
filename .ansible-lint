@@ -20,6 +20,7 @@ skip_list:
   - fqcn[keyword]
   - role-name[path]
   - var-naming[no-role-prefix]
+  - syntax-check[unknown-module] # it doesn't like the hub names we use with the various changes
 warn_list:
   - jinja[invalid]  # Temporarily adding this due to https://github.com/ansible/ansible-lint/issues/3048
 kinds:
